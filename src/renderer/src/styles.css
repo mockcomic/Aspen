@@ -14,7 +14,15 @@
  *   --danger                       deletions, conflicts, destructive verbs
  *   --caution                      soft warnings you can continue past
  *   --ai                           the agent alone: the one accent that is
- *                                  allowed to be decorative
+ *                                  allowed to be decorative, and the violet
+ *                                  it speaks in as text
+ *   --ai-face / --ai-face-hover    the agent's fillable face: a deeper shade
+ *                                  of the same violet, chosen per palette so
+ *                                  that --on-accent ink clears 4.5:1 at rest
+ *                                  and on hover (tests/themes.test.ts holds
+ *                                  every palette to that floor — a verb
+ *                                  painted in its own background color is
+ *                                  not a verb)
  *   --pull-face / --push-face      the sync verbs' own hues: amber for
  *                                  incoming, green for outgoing — the
  *                                  filled faces the Pull/Push buttons wear
@@ -217,8 +225,8 @@ html[data-theme='gruvbox-dark'] {
   --danger-hover: #cc241d;
   --caution: #fabd2f;
   --ai: #d3869b;
-  --ai-face: #b16286;
-  --ai-face-hover: #8f4f66;
+  --ai-face: #8f3f71;
+  --ai-face-hover: #723059;
   --pull-face: #b57614;
   --pull-face-hover: #9d6610;
   --push-face: #79740e;
@@ -363,8 +371,8 @@ html[data-theme='nord'] {
   --danger-hover: #a54f56;
   --caution: #ebcb8b;
   --ai: #b48ead;
-  --ai-face: #b48ead;
-  --ai-face-hover: #9b6f94;
+  --ai-face: #8a5c82;
+  --ai-face-hover: #7b5273;
   --pull-face: #c7a76a;
   --pull-face-hover: #b4945c;
   --push-face: #8ba473;
@@ -436,8 +444,8 @@ html[data-theme='one-dark'] {
   --danger-hover: #be5046;
   --caution: #e5c07b;
   --ai: #c678dd;
-  --ai-face: #a557ba;
-  --ai-face-hover: #8f47a3;
+  --ai-face: #c678dd;
+  --ai-face-hover: #b16dc3;
   --pull-face: #e5c07b;
   --pull-face-hover: #d8b46f;
   --push-face: #98c379;
@@ -582,8 +590,8 @@ html[data-theme='everforest-dark'] {
   --danger-hover: #c1585c;
   --caution: #dbbc7f;
   --ai: #d699b6;
-  --ai-face: #c787a5;
-  --ai-face-hover: #b06d8b;
+  --ai-face: #d699b6;
+  --ai-face-hover: #cb90ac;
   --pull-face: #dbbc7f;
   --pull-face-hover: #cdb073;
   --push-face: #a7c080;
@@ -655,8 +663,8 @@ html[data-theme='everforest-light'] {
   --danger-hover: #c43e3b;
   --caution: #dfa000;
   --ai: #df69ba;
-  --ai-face: #df69ba;
-  --ai-face-hover: #c24f9f;
+  --ai-face: #8f3f71;
+  --ai-face-hover: #7d3763;
   --pull-face: #b38100;
   --pull-face-hover: #9c7100;
   --push-face: #6f8001;
@@ -729,7 +737,7 @@ html[data-theme='dracula'] {
   --caution: #f1fa8c;
   --ai: #ff79c6;
   --ai-face: #ff79c6;
-  --ai-face-hover: #e062b0;
+  --ai-face-hover: #fb6cc0;
   --pull-face: #f1fa8c;
   --pull-face-hover: #e2eb7e;
   --push-face: #50fa7b;
@@ -801,8 +809,8 @@ html[data-theme='solarized-dark'] {
   --danger-hover: #b52a27;
   --caution: #b58900;
   --ai: #d33682;
-  --ai-face: #d33682;
-  --ai-face-hover: #b52d6f;
+  --ai-face: #b52d6f;
+  --ai-face-hover: #9c2763;
   --pull-face: #b58900;
   --pull-face-hover: #9a7400;
   --push-face: #6d7e00;
@@ -873,8 +881,8 @@ html[data-theme='solarized-light'] {
   --danger-hover: #c42a28;
   --caution: #b58900;
   --ai: #d33682;
-  --ai-face: #d33682;
-  --ai-face-hover: #bd2f76;
+  --ai-face: #bd2f76;
+  --ai-face-hover: #a02762;
   --pull-face: #b58900;
   --pull-face-hover: #9a7400;
   --push-face: #6d7e00;
@@ -948,7 +956,7 @@ html[data-theme='tokyo-night'] {
   --caution: #e0af68;
   --ai: #bb9af7;
   --ai-face: #9d7cd8;
-  --ai-face-hover: #8664c0;
+  --ai-face-hover: #9672d5;
   --pull-face: #e0af68;
   --pull-face-hover: #d1a05c;
   --push-face: #9ece6a;
@@ -1203,12 +1211,17 @@ button {
 
 /* The AI agent's own signature: Primer's done-purple — the one accent in the
    system that is allowed to be decorative, so the machine that writes your
-   message for you reads as the different machine in the room. */
+   message for you reads as the different machine in the room. Every filled
+   agent verb takes this one face and the theme's accent ink — never --ai as
+   the label, since a label painted with its own background is no label — and
+   the palette's --ai-face is chosen deep enough that the ink clears 4.5:1 both
+   at rest and on the hover below. The agent's quiet form is `.mini.ai`: violet
+   as text, with no face of its own. */
 .btn.ai {
   background: var(--ai-face);
   border-color: var(--btn-border);
   color: var(--on-accent);
-  /* The sparkle is a letterform in the label's own white, not a gold emoji: a
+  /* The sparkle is a letterform in the label's own ink, not a gold emoji: a
      color with no role may not ride in on a glyph. */
   font-variant-emoji: text;
 }
@@ -1249,7 +1262,8 @@ button {
 /* A filled verb that is unavailable takes Primer's disabled face, exactly
    like the commit button: grayed means grayed the same way everywhere. */
 .btn.pull:disabled,
-.btn.push:disabled {
+.btn.push:disabled,
+.btn.ai:disabled {
   background: var(--btn-disabled-bg);
   border-color: var(--btn-border);
   color: var(--btn-disabled-ink);
@@ -4518,19 +4532,14 @@ img.account-avatar {
   text-decoration: none;
 }
 
-/* The bulk verb: one agent working the whole conflicted list, in the same
-   Agent Violet as the row button, so ✨ always reads as the agent at whatever
-   scope it is offered. Its progress line is the batch's only motion, and Stop
-   is honest — files the pass already merged stay merged. */
-.btn.ai {
-  color: var(--ai);
-  font-variant-emoji: text;
-}
-
-.btn.ai:disabled {
-  color: var(--btn-disabled-ink);
-}
-
+/* The bulk verb: one agent working the whole conflicted list, so it wears the
+   filled agent face exactly like the tray's ✨ Generate — the same verb at a
+   wider scope, not a different one. This rule used to re-ink `.btn.ai` to --ai
+   here, unscoped, and reached back into the commit tray to paint the filled
+   Generate label in its own background color (in the palettes where --ai and
+   --ai-face are the same value, that erased the label outright). The quiet form
+   of the verb is `.mini.ai` just above: Agent Violet as text, no face, for the
+   conflicted row it sits in. */
 .batch-actions {
   display: flex;
   align-items: center;
@@ -4538,6 +4547,8 @@ img.account-avatar {
   flex-wrap: wrap;
 }
 
+/* The progress line is the batch's only motion, and Stop is honest — files the
+   pass already merged stay merged. */
 .batch-progress {
   display: inline-flex;
   align-items: center;
@@ -4590,8 +4601,8 @@ img.account-avatar {
 }
 
 .merge-option.active {
-  background: var(--ai);
-  border-color: var(--ai);
+  background: var(--ai-face);
+  border-color: var(--ai-face);
   color: var(--on-accent);
 }
 
