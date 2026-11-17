@@ -84,6 +84,39 @@ export interface UnpushedStory {
 }
 
 /**
+ * Does this repository owe the remote anything right now — the Outbox
+ * desk's reason to exist, following the desk's progressive rule (a tab
+ * appears when it has something to say). Three honest shapes of "yes":
+ * a live upstream with commits ahead; a tracked ref deleted on the server
+ * (the desk's only verb is republish); and a branch with no upstream at
+ * all while a remote is configured — its commits are unpushed until
+ * Publish. A repository with no remote has nothing to owe, and a detached
+ * HEAD with no upstream owes nothing specific, so neither earns a tab.
+ * "Has commits" comes from the status header itself: porcelain reports an
+ * unborn or corrupt HEAD as a parenthesized marker (`(initial)`,
+ * `(unborn)`, `(corrupted)`), and anything else is a real OID — so the rule
+ * never waits on the log walk, and status lands on every open and every
+ * watcher tick.
+ */
+export function outboxEarned(
+  status: RepositoryStatus | null,
+  hasRemote: boolean
+): boolean {
+  if (
+    status === null ||
+    !hasRemote ||
+    status.detached ||
+    status.oid.length === 0 ||
+    status.oid.startsWith('(')
+  ) {
+    return false
+  }
+  if (status.upstreamGone === true) return true
+  if (status.upstream !== undefined) return (status.ahead ?? 0) > 0
+  return true
+}
+
+/**
  * The outgoing work, in the words the pill, its tooltip and its empty state
  * need. One function so the pill can never quote a number the strip's ↑ chip
  * disagrees with, and so the three states that have no `ahead` to show —

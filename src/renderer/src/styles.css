@@ -4327,12 +4327,33 @@ img.account-avatar {
 
 .identity-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .identity-form input {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.identity-note {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* The Outbox queue label carries its bulk verb on the far edge. */
+.queue-label:has(.outbox-uncommit-all) {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.outbox-uncommit-all {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .conflict-actions {

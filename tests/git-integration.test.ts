@@ -19,6 +19,7 @@ import {
   cherryPickCommit,
   commitPaths,
   revertCommit,
+  uncommitAllUnpushed,
   uncommitCommit,
   undoLastCommit
 } from '../src/main/git/commit'
@@ -929,6 +930,105 @@ describe('git integration', () => {
       expect(only.map(c => c.summary)).toEqual(['lone commit'])
       expect(only[0]?.unpushed).toBe(true)
       rmSync(lone, { recursive: true, force: true })
+    })
+  })
+
+  describe('bulk uncommit', () => {
+    /** Branch with one pushed commit and `count` outgoing ones. */
+    async function seedBulk(
+      branch: string,
+      count: number
+    ): Promise<{ newest: string; base: string }> {
+      await resetClean()
+      await git(['checkout', '-q', 'main'])
+      await git(['checkout', '-q', '-b', branch])
+      write(`${branch}-base.txt`, 'base\n')
+      const base = await commitAll(`bulk ${branch} pushed`)
+      await git(['push', '-q', '--set-upstream', 'origin', branch])
+      let newest = base
+      for (let i = 0; i < count; i++) {
+        write(`${branch}-out-${i}.txt`, `${i}\n`)
+        newest = await commitAll(`bulk ${branch} waiting ${i}`)
+      }
+      return { newest, base }
+    }
+
+    async function cleanUpBulk(branch: string): Promise<void> {
+      await resetClean()
+      await git(['checkout', '-q', 'main'])
+      await execGit(['push', '-q', 'origin', '--delete', branch], {
+        cwd: repo,
+        successExitCodes: new Set([0, 1])
+      })
+      await execGit(['update-ref', '-d', `refs/remotes/origin/${branch}`], {
+        cwd: repo,
+        successExitCodes: new Set([0, 1])
+      })
+      await execGit(['branch', '-D', branch], {
+        cwd: repo,
+        successExitCodes: new Set([0, 1])
+      })
+    }
+
+    beforeEach(async () => {
+      for (const branch of ['bulk-range', 'bulk-merge']) {
+        await cleanUpBulk(branch)
+      }
+    })
+
+    it('resets the whole outgoing range and leaves every change staged', async () => {
+      const { newest, base } = await seedBulk('bulk-range', 3)
+      const removed = await uncommitAllUnpushed(repo, newest)
+      expect(removed).toHaveLength(3)
+      expect(removed[0]).toBe(newest)
+
+      // HEAD sits on the pushed base; the three files are staged, not lost.
+      const head = (await execGit(['rev-parse', 'HEAD'], { cwd: repo })).stdout.trim()
+      expect(head).toBe(base)
+      const status = await getStatus(repo)
+      expect(status.ahead).toBe(0)
+      for (let i = 0; i < 3; i++) {
+        const file = status.files.find(f => f.path === `bulk-range-out-${i}.txt`)
+        expect(file?.staged).toBe(true)
+      }
+      await cleanUpBulk('bulk-range')
+    })
+
+    it('refuses when HEAD moved and changes nothing', async () => {
+      const { newest } = await seedBulk('bulk-range', 2)
+      const extra = await commitAll('bulk-range raced in')
+      await expect(uncommitAllUnpushed(repo, newest)).rejects.toThrow(
+        /moved since this list was loaded/
+      )
+      const head = (await execGit(['rev-parse', 'HEAD'], { cwd: repo })).stdout.trim()
+      expect(head).toBe(extra)
+      await cleanUpBulk('bulk-range')
+    })
+
+    it('refuses when the range contains a merge', async () => {
+      const { newest } = await seedBulk('bulk-merge', 1)
+      // A side branch merged into the outgoing tip: the range now holds a merge.
+      await git(['checkout', '-q', '-b', 'bulk-merge-side'])
+      write('bulk-merge-side.txt', 'side\n')
+      await commitAll('bulk-merge side work')
+      await git(['checkout', '-q', 'bulk-merge'])
+      await execGit(['merge', '--no-ff', '--quiet', '-m', 'bulk-merge merge', 'bulk-merge-side'], {
+        cwd: repo
+      })
+      // HEAD is the merge now; expectedSha is the listed (stale) tip.
+      const mergedHead = (await execGit(['rev-parse', 'HEAD'], { cwd: repo })).stdout.trim()
+      await expect(uncommitAllUnpushed(repo, mergedHead)).rejects.toThrow(
+        /contains a merge commit/
+      )
+      expect(newest.length).toBeGreaterThan(0)
+      await cleanUpBulk('bulk-merge')
+      await cleanUpBulk('bulk-merge-side')
+    })
+
+    it('returns nothing when the branch has no outgoing work', async () => {
+      const { newest } = await seedBulk('bulk-range', 0)
+      await expect(uncommitAllUnpushed(repo, newest)).resolves.toEqual([])
+      await cleanUpBulk('bulk-range')
     })
   })
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   aiLooksUnconfigured,
+  outboxEarned,
   showStagedBadges,
   syncVerb,
   unpushedStory
@@ -146,6 +147,37 @@ describe('aiLooksUnconfigured', () => {
 
   it('is not opinionated before settings have loaded', () => {
     expect(aiLooksUnconfigured(null)).toBe(false)
+  })
+})
+
+describe('outboxEarned', () => {
+  it('appears when a live upstream has commits to receive', () => {
+    expect(outboxEarned(status({ ahead: 2 }), true)).toBe(true)
+    expect(outboxEarned(status({ ahead: 0, behind: 6 }), true)).toBe(false)
+    expect(outboxEarned(status(), true)).toBe(false)
+  })
+
+  it('appears for an unpublished branch on a repo with a remote', () => {
+    expect(
+      outboxEarned(status({ upstream: undefined, ahead: undefined }), true)
+    ).toBe(true)
+  })
+
+  it('appears when the tracked ref was deleted on the server', () => {
+    expect(
+      outboxEarned(status({ upstreamGone: true, ahead: 0 }), true)
+    ).toBe(true)
+  })
+
+  it('stays away with no remote, an unborn or corrupt HEAD, a detached HEAD, or no status', () => {
+    expect(outboxEarned(status({ ahead: 3 }), false)).toBe(false)
+    expect(outboxEarned(status({ ahead: 3, oid: '(initial)' }), true)).toBe(false)
+    expect(outboxEarned(status({ ahead: 3, oid: '(unborn)' }), true)).toBe(false)
+    expect(outboxEarned(status({ ahead: 3, oid: '' }), true)).toBe(false)
+    expect(
+      outboxEarned(status({ detached: true, upstream: undefined }), true)
+    ).toBe(false)
+    expect(outboxEarned(null, true)).toBe(false)
   })
 })
 

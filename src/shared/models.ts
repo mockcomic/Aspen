@@ -450,6 +450,13 @@ export interface AccountInfo {
   readonly login: string
   readonly displayName: string
   readonly avatarUrl: string | null
+  /**
+   * Commit-worthy account email learned at sign-in / the identity refresh
+   * (GitHub: primary verified, else the noreply alias). Old rows written
+   * before this field existed read back as undefined — every reader treats
+   * missing exactly like null.
+   */
+  readonly email?: string | null
   readonly authKind: AccountAuthKind
 }
 

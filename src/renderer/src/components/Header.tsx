@@ -18,6 +18,7 @@ import type { SyncVerb } from '../progressive'
 const FILTER_LABELS: Record<DeskView, string> = {
   review: 'Filter files by path',
   history: 'Search commit messages',
+  outbox: 'Search commit messages',
   conflicts: 'Filter conflicted files',
   stash: 'Filter stashes',
   scripts: 'Filter scripts by name'

@@ -109,6 +109,7 @@ export async function addAccount(input: {
     login: input.identity.login,
     displayName: input.identity.displayName,
     avatarUrl: input.identity.avatarUrl,
+    email: input.identity.email,
     authKind: input.authKind
   }
   // Write the credential BEFORE the row and before deleting replaced
@@ -243,11 +244,13 @@ export async function syncAccountIdentities(): Promise<AccountSyncReport> {
           : await gitlabClient.validate(account.apiBase, token, account.authKind)
       if (
         identity.displayName !== account.displayName ||
-        identity.avatarUrl !== account.avatarUrl
+        identity.avatarUrl !== account.avatarUrl ||
+        identity.email !== account.email
       ) {
         patches.set(account.id, {
           displayName: identity.displayName,
-          avatarUrl: identity.avatarUrl
+          avatarUrl: identity.avatarUrl,
+          email: identity.email
         })
         avatarCache.delete(account.id)
         changed = true

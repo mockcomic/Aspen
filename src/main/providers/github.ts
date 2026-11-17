@@ -64,15 +64,49 @@ export function githubSiteRoot(apiBase: string): string {
 }
 
 export function mapGitHubIdentity(
-  json: Record<string, unknown>
+  json: Record<string, unknown>,
+  emails?: unknown
 ): ProviderIdentity | null {
   const login = str(json.login)
   if (login === null) return null
   return {
     login,
     displayName: str(json.name) ?? login,
-    avatarUrl: str(json.avatar_url)
+    avatarUrl: str(json.avatar_url),
+    email: pickGitHubEmail(json, emails)
   }
+}
+
+/**
+ * The email a git commit should carry for this account. GitHub's public
+ * `email` field is whatever the user chose to show and may be unverified or
+ * empty; `/user/emails` is authoritative, so its primary verified address
+ * wins. The documented noreply alias (`ID+login@users.noreply.github.com`)
+ * is the fallback: it is GitHub-owned, routes mail, and hides the real
+ * address from commit metadata — the safe default when nothing else is set.
+ */
+export function pickGitHubEmail(
+  user: Record<string, unknown>,
+  emails: unknown
+): string | null {
+  const valid = (value: string | null): value is string =>
+    value !== null && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)
+  if (Array.isArray(emails)) {
+    const rows = emails as Array<Record<string, unknown>>
+    const primary = rows.find(
+      r => r.primary === true && r.verified === true
+    ) ?? rows.find(r => r.verified === true)
+    const picked = str(primary?.email)
+    if (valid(picked)) return picked
+  }
+  const publicEmail = str(user.email)
+  if (valid(publicEmail)) return publicEmail
+  const id = user.id
+  if (typeof id === 'number' && Number.isSafeInteger(id) && id > 0) {
+    const login = str(user.login)
+    if (login !== null) return `${id}+${login}@users.noreply.github.com`
+  }
+  return null
 }
 
 export function mapGitHubRepo(
@@ -367,7 +401,20 @@ export const githubClient: ProviderClient = {
   async validate(apiBase, token) {
     const res = await apiFetch(`${apiBase}/user`, { headers: authHeaders(token) })
     if (!res.ok) fail(res)
-    const identity = mapGitHubIdentity(res.json)
+    // Best-effort companion call: /user/emails is authoritative for which
+    // addresses are verified. A failure here (scope-less token, Enterprise
+    // quirk, offline mid-flow) leaves `email` null, which only costs the
+    // identity prefills — never the sign-in itself.
+    let emails: unknown = null
+    try {
+      const emailRes = await apiFetch(`${apiBase}/user/emails`, {
+        headers: authHeaders(token)
+      })
+      if (emailRes.ok) emails = emailRes.json
+    } catch {
+      /* optional enrichment, not a gate */
+    }
+    const identity = mapGitHubIdentity(res.json, emails)
     if (identity === null) {
       throw new Error('GitHub returned an unreadable user record for this token.')
     }

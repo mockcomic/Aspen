@@ -127,7 +127,7 @@ export function buildLogArgs(
  * streams so a miss is just an exit 1 (same shape as the `[gone]` probe in
  * src/main/git/status.ts).
  */
-async function unpushedRange(
+export async function unpushedRange(
   repoPath: string
 ): Promise<ReadonlyArray<string>> {
   const live = await execGit(

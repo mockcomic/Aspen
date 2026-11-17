@@ -98,7 +98,13 @@ export interface ConfirmRequest {
 
 /** The work modes of the command desk; Scripts joins when the repo has a
  *  package.json with scripts (see visibleDeskTabs in App.tsx). */
-export type DeskView = 'review' | 'history' | 'conflicts' | 'stash' | 'scripts'
+export type DeskView =
+  | 'review'
+  | 'history'
+  | 'outbox'
+  | 'conflicts'
+  | 'stash'
+  | 'scripts'
 
 /**
  * One pending "run this script in the terminal" request, handed from the
@@ -212,11 +218,6 @@ export interface AppState {
   readonly logError: string | null
   readonly logSearch: string
   readonly logAuthor: string
-  /**
-   * The History desk's Unpushed pill: the log is walked over the outgoing
-   * range only. Independent of the strip's filter, which narrows *within* it.
-   */
-  readonly logUnpushed: boolean
   readonly logExhausted: boolean
   readonly view: DeskView
   /** Text in the command strip's filter; scopes the current view. */
@@ -369,7 +370,6 @@ const initialState: AppState = {
   logError: null,
   logSearch: '',
   logAuthor: '',
-  logUnpushed: false,
   logExhausted: false,
   view: 'review',
   deskFilter: '',
@@ -905,7 +905,6 @@ export class AppStore {
   scopeLoading: false,
       logSearch: '',
       logAuthor: '',
-      logUnpushed: false,
       commits: []
     })
     void call('startWatching', repo.path).catch(() => undefined)
@@ -1645,7 +1644,7 @@ export class AppStore {
               selectedFilePreview: null
             })
           }
-          if (this.state.view === 'history') await this.loadLog(false)
+          if (this.state.view === 'history' || this.state.view === 'outbox') await this.loadLog(false)
         } catch (err) {
           this.update({
             // A silent (watcher-driven) re-read must not blank a status the
@@ -1767,7 +1766,11 @@ export class AppStore {
         // The pill restricts the walk; off it, the rows still need their
         // outgoing marks, so the history list says the same thing the pill
         // would. The hub's one-row log asks for neither.
-        unpushed: this.state.logUnpushed ? 'only' : 'mark'
+        // The Outbox desk restricts the walk to the outgoing range; off it,
+        // the rows still need their outgoing marks, so the history list says
+        // the same thing the Outbox badge does. The hub's one-row log asks
+        // for neither.
+        unpushed: this.state.view === 'outbox' ? 'only' : 'mark'
       }
       const page = await call('getLog', repo.path, query)
       if (this.state.selectedRepo?.path !== repo.path) return
@@ -1795,25 +1798,12 @@ export class AppStore {
     this.scheduleLogReload()
   }
 
-  /** The History desk's Unpushed pill. */
-  setLogUnpushed(value: boolean): void {
-    if (value === this.state.logUnpushed) return
-    this.update({ logUnpushed: value })
-    this.scheduleLogReload()
-  }
-
-  toggleLogUnpushed(): void {
-    this.setLogUnpushed(!this.state.logUnpushed)
-  }
-
   /**
-   * Name the outgoing list directly — the Repository menu's route. Both steps
-   * debounce through the same handle, so switching desks and turning the pill
-   * on costs exactly one reload.
+   * Name the outgoing list directly — the Repository menu's route. The desk
+   * switch itself re-loads the log, so this is one debounced reload.
    */
   showUnpushedCommits(): void {
-    this.setView('history')
-    this.setLogUnpushed(true)
+    this.setView('outbox')
   }
 
   private scheduleLogReload(): void {
@@ -1836,7 +1826,9 @@ export class AppStore {
   setView(view: DeskView): void {
     const syncLog = this.state.logSearch !== this.state.deskFilter
     this.update({ view })
-    if (view === 'history') {
+    // History and Outbox are the two log-backed desks: whichever the walk
+    // runs over, the strip's filter has to stay in sync and the rows reload.
+    if (view === 'history' || view === 'outbox') {
       if (syncLog) this.update({ logSearch: this.state.deskFilter })
       if (syncLog || (this.state.commits.length === 0 && !this.state.commitsLoading)) {
         this.scheduleLogReload()
@@ -1853,7 +1845,10 @@ export class AppStore {
   /** The command strip's filter: scopes files, commits, or stashes. */
   setDeskFilter(value: string): void {
     this.update({ deskFilter: value })
-    if (this.state.view === 'history' && value !== this.state.logSearch) {
+    if (
+      (this.state.view === 'history' || this.state.view === 'outbox') &&
+      value !== this.state.logSearch
+    ) {
       this.update({ logSearch: value })
       this.scheduleLogReload()
     }
@@ -2559,7 +2554,7 @@ export class AppStore {
       await this.refresh()
       void this.refreshBranches()
       void this.refreshStashes()
-      if (this.state.view === 'history') void this.loadLog(false)
+      if (this.state.view === 'history' || this.state.view === 'outbox') void this.loadLog(false)
     } catch (err) {
       this.update({ busy: null })
       this.toast('error', err instanceof Error ? err.message : String(err))
@@ -2679,6 +2674,70 @@ export class AppStore {
       null,
       commit.unpushed
     )
+  }
+
+  /**
+   * The Outbox desk's "Uncommit all": one guarded soft reset removes every
+   * unpushed commit at once and leaves their combined diff staged in
+   * Review. The commit box gets the newest commit's message with the other
+   * removed summaries listed under it, so nothing typed is lost to the
+   * squish. Refusals (a merge in the range, a moved HEAD, a range that is
+   * not a straight line) surface as the main-process error and change
+   * nothing — the per-row Uncommit stays the way through.
+   */
+  uncommitAllUnpushed(): void {
+    const repo = this.state.selectedRepo
+    if (repo === null) {
+      this.toast('error', 'Open a repository first.')
+      return
+    }
+    const outgoing = this.state.commits.filter(c => c.unpushed)
+    if (outgoing.length === 0) {
+      this.toast('info', 'Nothing is waiting to be undone.')
+      return
+    }
+    const [newest] = outgoing
+    const rest = outgoing.slice(1)
+    const description =
+      rest.length === 0
+        ? newest.body
+        : [
+            newest.body,
+            'Previously unpushed commits folded into this one:',
+            ...rest.map(c => `- ${c.summary}`)
+          ]
+          .filter(p => p.length > 0)
+          .join('\n\n')
+    this.update({
+      confirm: {
+        title: `Uncommit all ${outgoing.length === 1 ? 'unpushed commit' : `${outgoing.length} unpushed commits`}?`,
+        message:
+          `All ${outgoing.length === 1 ? 'commit' : `${outgoing.length} commits`} waiting to be pushed will be removed from history. ` +
+          'Their changes come back to Review as staged files, and the newest message goes back to the commit box' +
+          (rest.length > 0
+            ? ` with the other ${rest.length} listed under it`
+            : '') +
+          '.',
+        confirmLabel: 'Uncommit all',
+        onConfirm: () => {
+          this.update({ confirm: null })
+          void (async () => {
+            const ok = await this.runGit(async () => {
+              await call('uncommitAllUnpushed', repo.path, newest.sha)
+            }, 'undo')
+            if (!ok) return
+            this.setDraft(repo.path, {
+              summary: newest.summary,
+              description,
+              checked: new Set()
+            })
+            this.update({ lastCommit: null, amend: null, view: 'review' })
+            void this.loadLog(false)
+            void this.refresh()
+          })()
+        }
+      }
+    })
   }
 
   /**
@@ -2886,7 +2945,7 @@ export class AppStore {
       await this.refresh()
       void this.refreshBranches()
       void this.refreshStashes()
-      if (this.state.view === 'history') void this.loadLog(false)
+      if (this.state.view === 'history' || this.state.view === 'outbox') void this.loadLog(false)
       return true
     } catch (err) {
       // A failed pull retires the compound-verb flag: the conflicts dialog
@@ -3085,7 +3144,7 @@ export class AppStore {
       if (this.state.selectedRepo?.path !== path) return
       await this.refresh()
       void this.refreshBranches()
-      if (this.state.view === 'history') void this.loadLog(false)
+      if (this.state.view === 'history' || this.state.view === 'outbox') void this.loadLog(false)
     } catch {
       // Offline, an expired token, a dead remote: the next tick tries again,
       // and a manual Fetch says out loud what this one swallowed.
@@ -3193,7 +3252,7 @@ export class AppStore {
     }
     void this.refreshBranches()
     void this.refreshStashes()
-    if (this.state.view === 'history') void this.loadLog(false)
+    if (this.state.view === 'history' || this.state.view === 'outbox') void this.loadLog(false)
   }
 
   async createBranch(name: string, startPoint?: string): Promise<void> {

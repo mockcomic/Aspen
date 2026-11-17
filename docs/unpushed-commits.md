@@ -163,6 +163,40 @@ work.
 - No keyboard accelerator: Ctrl+Enter/X/Z/S/M/F/P/U/G are taken. The pill and the
   menu item are the entry points.
 
+## Since this doc was written: the Outbox desk (0.3.4 cycle)
+
+The pill graduated into a first-class **Outbox** tab: progressive like
+Conflicts/Stash (it appears when the branch owes a remote — ahead of a live
+upstream, upstream deleted on the server, or an unpublished branch on a repo
+with a remote; hidden for an unborn/detached HEAD or no remote at all, per
+`progressive.outboxEarned`, decided from the porcelain status header so it
+never waits on the log walk). The tab wears the ↑ count, `OutboxQueue` lists
+the same rows with a hover **Uncommit** each, and the pill's routes (menu
+item, `showUnpushedCommits`) now switch desks instead of toggling a filter;
+the History desk keeps its Author filter and the per-row marks.
+
+**Bulk "Uncommit all"** — `uncommitAllUnpushed(repoPath, expectedSha)` in
+`src/main/git/commit.ts`: one guarded soft reset over the same
+`log.unpushedRange()` the list is built from, so rows and verb can never
+disagree. Stricter guards than the single uncommit, because one step rewrites
+many commits: HEAD must still be the newest listed commit; a merge anywhere in
+the range refuses (a soft reset would flatten it); and the range must be a
+straight line from the boundary parent to HEAD (`rev-list --count` equality),
+which rejects the multi-root `HEAD --not --remotes` shape that would smuggle
+pushed work into the staged diff. An empty range resolves `[]` — nothing to
+undo is not an error. The confirm dialog folds the removed summaries into the
+commit box body under the newest message, and the desk jumps to Review with
+everything staged.
+
+**Identity bridge** — the "Set your git author name and email" banner now
+says why sign-in did not clear it (auth ≠ authorship) and offers **Use my
+GitHub/GitLab identity**, which prefills the form from the linked account:
+`ProviderIdentity.email` carries the primary *verified* address from
+`/user/emails` (fall back: public email, then the `ID+login@users.noreply.github.com`
+alias; GitLab: the profile email), stored on the account row and refreshed by
+the existing identity sync. Editable before saving, so noreply-vs-real stays
+a user choice.
+
 ## Try it
 
 Open a repository whose branch is ahead of its upstream, press the **History**
