@@ -99,6 +99,9 @@
     "nsis": {
       "artifactName": "Aspen-Setup.${ext}"
     },
+    "appImage": {
+      "artifactName": "Aspen.${ext}"
+    },
     "portable": {
       "artifactName": "Aspen-portable.${ext}"
     }
