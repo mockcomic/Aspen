@@ -47,6 +47,7 @@ import {
   commitPaths,
   revertCommit,
   uncommitCommit,
+  uncommitAllUnpushed,
   undoLastCommit
 } from './git/commit'
 import {
@@ -855,6 +856,9 @@ const handlers: Handlers = {
   },
   async uncommitCommit(repoPath: string, sha: string) {
     await uncommitCommit(repoPath, sha)
+  },
+  async uncommitAllUnpushed(repoPath: string, expectedSha: string) {
+    return uncommitAllUnpushed(repoPath, expectedSha)
   },
   async revertCommit(repoPath: string, sha: string) {
     await revertCommit(repoPath, sha)

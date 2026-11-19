@@ -54,7 +54,8 @@ export function mapGitLabIdentity(
   return {
     login,
     displayName: str(json.name) ?? login,
-    avatarUrl: str(json.avatar_url)
+    avatarUrl: str(json.avatar_url),
+    email: str(json.email)
   }
 }
 

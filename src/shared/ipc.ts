@@ -287,6 +287,13 @@ export interface RequestResponseChannels {
    * commit box (clean tree required; full rollback on any conflict).
    */
   uncommitCommit: (repoPath: string, sha: string) => void
+  /**
+   * Bulk "Uncommit all" for the Outbox desk: one guarded soft reset over
+   * `@{upstream}..HEAD` (or the no-upstream fallback), refusing on a merge
+   * in the range, a moved HEAD, or a range that isn't a straight line.
+   * Returns the removed SHAs newest-first, or [] when there was nothing.
+   */
+  uncommitAllUnpushed: (repoPath: string, expectedSha: string) => string[]
   revertCommit: (repoPath: string, sha: string) => void
   cherryPickCommit: (repoPath: string, sha: string) => void
 
@@ -453,6 +460,7 @@ export type MenuAction =
   | 'stash-all'
   | 'edit-last-commit'
   | 'undo-commit'
+  | 'show-unpushed-commits'
   | 'copy-sha'
   | 'revert-commit'
   | 'cherry-pick-commit'

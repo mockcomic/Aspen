@@ -1,6 +1,6 @@
 {
   "name": "aspen",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "A visual desktop client for Git.",
   "main": "./out/main/index.js",
   "author": {
@@ -78,7 +78,14 @@
       "target": [
         "nsis",
         "portable"
-      ]
+      ],
+      "signtoolOptions": {
+        "sign": "scripts/azure-sign.cjs",
+        "signingHashAlgorithms": [
+          "sha256"
+        ]
+      },
+      "forceCodeSigning": true
     },
     "mac": {
       "icon": "resources/icons/aspen.png",
@@ -98,6 +105,9 @@
     },
     "nsis": {
       "artifactName": "Aspen-Setup.${ext}"
+    },
+    "appImage": {
+      "artifactName": "Aspen.${ext}"
     },
     "portable": {
       "artifactName": "Aspen-portable.${ext}"

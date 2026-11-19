@@ -8,6 +8,7 @@ import {
   CommitTray,
   ConflictsQueue,
   HistoryQueue,
+  OutboxQueue,
   ResolveHelp,
   StashDetail,
   StashQueue
@@ -37,6 +38,8 @@ import { RepoManagerDialog } from './components/RepoManagerDialog'
 import { EmptyState } from './components/EmptyState'
 import { useStore, useStoreState } from './store'
 import type { AppState, DeskView } from './store'
+import { commits } from './divergence'
+import { outboxEarned } from './progressive'
 
 interface DeskTab {
   readonly id: DeskView
@@ -56,6 +59,13 @@ function visibleDeskTabs(state: AppState): ReadonlyArray<DeskTab> {
     { id: 'review', label: 'Review' },
     { id: 'history', label: 'History' }
   ]
+  // Outbox earns its tab the way Conflicts and Stash do — by there being
+  // something in it: commits the branch owes a remote. See outboxEarned.
+  if (
+    outboxEarned(state.status, state.remoteUrl !== null)
+  ) {
+    tabs.push({ id: 'outbox', label: 'Outbox' })
+  }
   const conflicts = state.status?.conflictCount ?? 0
   const wf = state.status?.inProgress
   const workflowActive =
@@ -170,7 +180,7 @@ export function App(): JSX.Element {
   // returns to Review instead of stranding them on a retired tab.
   const deskTabs = useMemo(
     () => visibleDeskTabs(state),
-    [state.status, state.stashes, state.packageScripts]
+    [state.status, state.stashes, state.packageScripts, state.commits, state.remoteUrl]
   )
   useEffect(() => {
     if (!deskTabs.some(t => t.id === state.view)) store.setView('review')
@@ -225,6 +235,7 @@ export function App(): JSX.Element {
         <aside className="queue-col pane-enter" key={`queue-${view}`}>
           {view === 'review' && <ChangesQueue />}
           {view === 'history' && <HistoryQueue />}
+          {view === 'outbox' && <OutboxQueue />}
           {view === 'conflicts' && <ConflictsQueue />}
           {view === 'stash' && <StashQueue />}
           {view === 'scripts' && <ScriptsQueue />}
@@ -288,7 +299,7 @@ export function App(): JSX.Element {
               }
             />
           )}
-          {view === 'history' && <HistoryView />}
+          {(view === 'history' || view === 'outbox') && <HistoryView />}
           {view === 'stash' && <StashDetail />}
           {view === 'scripts' && <ScriptsDetail />}
         </main>
@@ -380,6 +391,12 @@ function SegmentedSwitch(): JSX.Element {
   const files = state.status?.files.length ?? 0
   const stashes = state.stashes.length
   const scripts = state.packageScripts?.scripts.length ?? 0
+  // The History tab wears the queue behind Push. Only a branch with a live
+  // upstream has a count to wear: unpublished work has no ahead number for git
+  // to stand behind, and the strip's route readout already says `not
+  // published` for that. A detached HEAD has no route at all.
+  const outgoing =
+    state.status?.upstream === undefined ? 0 : (state.status?.ahead ?? 0)
 
   const measure = (): void => {
     const nav = tabsRef.current
@@ -395,7 +412,7 @@ function SegmentedSwitch(): JSX.Element {
   // or disappears, since that changes the label's width.
   useLayoutEffect(() => {
     measure()
-  }, [state.view, files, conflicts, stashes, scripts])
+  }, [state.view, files, conflicts, stashes, scripts, outgoing])
 
   useEffect(() => {
     const nav = tabsRef.current
@@ -444,13 +461,15 @@ function SegmentedSwitch(): JSX.Element {
         const count =
           tab.id === 'review'
             ? files
-            : tab.id === 'conflicts'
-              ? conflicts
-              : tab.id === 'stash'
-                ? stashes
-                : tab.id === 'scripts'
-                  ? scripts
-                  : 0
+            : tab.id === 'outbox'
+              ? outgoing
+              : tab.id === 'conflicts'
+                ? conflicts
+                : tab.id === 'stash'
+                  ? stashes
+                  : tab.id === 'scripts'
+                    ? scripts
+                    : 0
         return (
           <button
             key={tab.id}
@@ -468,13 +487,17 @@ function SegmentedSwitch(): JSX.Element {
                 ? 'Review and commit your changes'
                 : tab.id === 'history'
                   ? 'Browse the commit history'
-                  : tab.id === 'conflicts'
-                    ? conflicts > 0
-                      ? `${conflicts} file${conflicts === 1 ? '' : 's'} waiting to be resolved`
-                      : 'No conflicts right now'
-                    : tab.id === 'stash'
-                      ? 'Restore previously stashed changes'
-                      : 'Run this project\u2019s package.json scripts'
+                  : tab.id === 'outbox'
+                    ? outgoing > 0
+                      ? `The ${commits(outgoing)} waiting to be pushed — undo any of them back to Review`
+                      : 'The commits waiting to be pushed'
+                    : tab.id === 'conflicts'
+                      ? conflicts > 0
+                        ? `${conflicts} file${conflicts === 1 ? '' : 's'} waiting to be resolved`
+                        : 'No conflicts right now'
+                      : tab.id === 'stash'
+                        ? 'Restore previously stashed changes'
+                        : 'Run this project\u2019s package.json scripts'
             }
           >
             {tab.label}

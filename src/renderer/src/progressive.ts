@@ -1,4 +1,5 @@
 import type { PublicSettings, RepositoryStatus } from '../../shared/models'
+import { commits } from './divergence'
 
 /**
  * Progressive-disclosure rules, extracted as pure functions so they are
@@ -66,4 +67,129 @@ export function aiLooksUnconfigured(settings: PublicSettings | null): boolean {
   const base = settings.ai.baseUrl.trim()
   if (base.length === 0) return true
   return !settings.ai.hasApiKey && base.startsWith('https://api.openai.com')
+}
+
+/** What the History desk's Unpushed pill says, and what its empty list says. */
+export interface UnpushedStory {
+  /**
+   * The pill's counter. Git's `ahead` count while the branch tracks a live
+   * remote ref — the same measurement the Push verb wears — and otherwise the
+   * rows the log itself marked, because a branch with no upstream has no
+   * ahead count to quote, only commits the remote has never seen.
+   */
+  readonly count: number
+  readonly title: string
+  readonly emptyTitle: string
+  readonly emptyHint: string
+}
+
+/**
+ * Does this repository owe the remote anything right now — the Outbox
+ * desk's reason to exist, following the desk's progressive rule (a tab
+ * appears when it has something to say). Three honest shapes of "yes":
+ * a live upstream with commits ahead; a tracked ref deleted on the server
+ * (the desk's only verb is republish); and a branch with no upstream at
+ * all while a remote is configured — its commits are unpushed until
+ * Publish. A repository with no remote has nothing to owe, and a detached
+ * HEAD with no upstream owes nothing specific, so neither earns a tab.
+ * "Has commits" comes from the status header itself: porcelain reports an
+ * unborn or corrupt HEAD as a parenthesized marker (`(initial)`,
+ * `(unborn)`, `(corrupted)`), and anything else is a real OID — so the rule
+ * never waits on the log walk, and status lands on every open and every
+ * watcher tick.
+ */
+export function outboxEarned(
+  status: RepositoryStatus | null,
+  hasRemote: boolean
+): boolean {
+  if (
+    status === null ||
+    !hasRemote ||
+    status.detached ||
+    status.oid.length === 0 ||
+    status.oid.startsWith('(')
+  ) {
+    return false
+  }
+  if (status.upstreamGone === true) return true
+  if (status.upstream !== undefined) return (status.ahead ?? 0) > 0
+  return true
+}
+
+/**
+ * The outgoing work, in the words the pill, its tooltip and its empty state
+ * need. One function so the pill can never quote a number the strip's ↑ chip
+ * disagrees with, and so the three states that have no `ahead` to show —
+ * detached, unpublished, and a tracked ref deleted on the server — each say so
+ * instead of reading as an empty list. `markedOnPage` is how many rows the
+ * loaded log flagged; the marks are git's own answer (src/main/git/log.ts),
+ * never a row's position.
+ */
+export function unpushedStory(
+  status: RepositoryStatus | null,
+  markedOnPage: number
+): UnpushedStory {
+  const nothing = 'Nothing to push'
+  if (status === null) {
+    return {
+      count: 0,
+      title: 'Loading repository status…',
+      emptyTitle: nothing,
+      emptyHint: 'Loading repository status…'
+    }
+  }
+  const branch = status.branch
+  const upstream = status.upstream
+  if (status.detached) {
+    return {
+      count: markedOnPage,
+      title:
+        'A detached HEAD tracks no branch — these commits are on no remote yet',
+      emptyTitle: nothing,
+      emptyHint: 'Every commit reachable from here is already on the remote.'
+    }
+  }
+  if (upstream === undefined) {
+    return {
+      count: markedOnPage,
+      title: `${branch} is not on the remote yet — its commits are unpushed until you Publish`,
+      emptyTitle: nothing,
+      emptyHint: `Every commit here is already on the remote — Publish only creates ${branch} on it.`
+    }
+  }
+  if (status.upstreamGone === true) {
+    return {
+      count: markedOnPage,
+      title: `The remote branch ${upstream} was deleted — Push republishes ${branch} with these commits`,
+      emptyTitle: nothing,
+      emptyHint: `Every commit here is already on the remote — Push recreates ${upstream}.`
+    }
+  }
+  const ahead = status.ahead ?? 0
+  const behind = status.behind ?? 0
+  if (ahead > 0) {
+    return {
+      count: ahead,
+      title: `List only the ${commits(ahead)} waiting to be pushed to ${upstream}`,
+      emptyTitle: nothing,
+      emptyHint: `${branch} is up to date with ${upstream}.`
+    }
+  }
+  // Nothing to send is not the same statement as nothing happening: with
+  // incoming work the branch is behind, and saying "up to date" would quote
+  // git's ahead count while hiding the behind count sitting next to it.
+  if (behind > 0) {
+    return {
+      count: 0,
+      title: `Nothing is waiting to be pushed — ${upstream} has ${commits(behind)} to pull first`,
+      emptyTitle: nothing,
+      emptyHint: `${branch} is ${commits(behind)} behind ${upstream} — Pull brings them down first.`
+    }
+  }
+  return {
+    count: 0,
+    title: `Nothing is waiting to be pushed — ${branch} is up to date with ${upstream}`,
+    emptyTitle: nothing,
+    emptyHint: `${branch} is up to date with ${upstream}.`
+  }
 }

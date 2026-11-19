@@ -18,6 +18,7 @@ import type {
   GitHubTarget,
   GitignoreResult,
   IgnoreRequest,
+  LogQuery,
   ManagedRepository,
   MergeAnswer,
   MergeExchange,
@@ -97,7 +98,13 @@ export interface ConfirmRequest {
 
 /** The work modes of the command desk; Scripts joins when the repo has a
  *  package.json with scripts (see visibleDeskTabs in App.tsx). */
-export type DeskView = 'review' | 'history' | 'conflicts' | 'stash' | 'scripts'
+export type DeskView =
+  | 'review'
+  | 'history'
+  | 'outbox'
+  | 'conflicts'
+  | 'stash'
+  | 'scripts'
 
 /**
  * One pending "run this script in the terminal" request, handed from the
@@ -187,6 +194,14 @@ export interface LastCommitState {
   readonly summary: string
   readonly description: string
   readonly paths: ReadonlyArray<string>
+  /**
+   * True by construction: a commit Aspen has not had the chance to push yet is
+   * not on the remote, and amending one that was there leaves the remote
+   * holding a different commit — which is why the undo of an amend may need a
+   * force-push too. A post-commit hook that pushes is the one case that makes
+   * this stale, and only until the next history load.
+   */
+  readonly unpushed: boolean
 }
 
 export interface AppState {
@@ -811,6 +826,9 @@ export class AppStore {
         break
       case 'undo-commit':
         this.undoCommit()
+        break
+      case 'show-unpushed-commits':
+        this.showUnpushedCommits()
         break
       case 'copy-sha':
         this.copySelectedCommitSha()
@@ -1626,7 +1644,7 @@ export class AppStore {
               selectedFilePreview: null
             })
           }
-          if (this.state.view === 'history') await this.loadLog(false)
+          if (this.state.view === 'history' || this.state.view === 'outbox') await this.loadLog(false)
         } catch (err) {
           this.update({
             // A silent (watcher-driven) re-read must not blank a status the
@@ -1740,12 +1758,21 @@ export class AppStore {
     const skip = append ? this.state.commits.length : 0
     this.update({ commitsLoading: true, logError: null })
     try {
-      const page = await call('getLog', repo.path, {
+      const query: LogQuery = {
         maxCount: PAGE_SIZE,
         skip,
         search: this.state.logSearch,
-        author: this.state.logAuthor
-      })
+        author: this.state.logAuthor,
+        // The pill restricts the walk; off it, the rows still need their
+        // outgoing marks, so the history list says the same thing the pill
+        // would. The hub's one-row log asks for neither.
+        // The Outbox desk restricts the walk to the outgoing range; off it,
+        // the rows still need their outgoing marks, so the history list says
+        // the same thing the Outbox badge does. The hub's one-row log asks
+        // for neither.
+        unpushed: this.state.view === 'outbox' ? 'only' : 'mark'
+      }
+      const page = await call('getLog', repo.path, query)
       if (this.state.selectedRepo?.path !== repo.path) return
       this.update({
         commits: append ? [...this.state.commits, ...page] : page,
@@ -1771,6 +1798,14 @@ export class AppStore {
     this.scheduleLogReload()
   }
 
+  /**
+   * Name the outgoing list directly — the Repository menu's route. The desk
+   * switch itself re-loads the log, so this is one debounced reload.
+   */
+  showUnpushedCommits(): void {
+    this.setView('outbox')
+  }
+
   private scheduleLogReload(): void {
     if (this.logDebounce !== null) clearTimeout(this.logDebounce)
     this.logDebounce = setTimeout(() => {
@@ -1791,7 +1826,9 @@ export class AppStore {
   setView(view: DeskView): void {
     const syncLog = this.state.logSearch !== this.state.deskFilter
     this.update({ view })
-    if (view === 'history') {
+    // History and Outbox are the two log-backed desks: whichever the walk
+    // runs over, the strip's filter has to stay in sync and the rows reload.
+    if (view === 'history' || view === 'outbox') {
       if (syncLog) this.update({ logSearch: this.state.deskFilter })
       if (syncLog || (this.state.commits.length === 0 && !this.state.commitsLoading)) {
         this.scheduleLogReload()
@@ -1808,7 +1845,10 @@ export class AppStore {
   /** The command strip's filter: scopes files, commits, or stashes. */
   setDeskFilter(value: string): void {
     this.update({ deskFilter: value })
-    if (this.state.view === 'history' && value !== this.state.logSearch) {
+    if (
+      (this.state.view === 'history' || this.state.view === 'outbox') &&
+      value !== this.state.logSearch
+    ) {
       this.update({ logSearch: value })
       this.scheduleLogReload()
     }
@@ -2499,7 +2539,8 @@ export class AppStore {
           // Undo re-checks the whole shipped scope: after the soft reset
           // those paths are all staged again, so the ticks just mirror the
           // baseline they will commit on the next press.
-          paths: wasAmend ? selected : [...new Set([...staged, ...selected])]
+          paths: wasAmend ? selected : [...new Set([...staged, ...selected])],
+          unpushed: true
         }
       })
       this.toast(
@@ -2513,7 +2554,7 @@ export class AppStore {
       await this.refresh()
       void this.refreshBranches()
       void this.refreshStashes()
-      if (this.state.view === 'history') void this.loadLog(false)
+      if (this.state.view === 'history' || this.state.view === 'outbox') void this.loadLog(false)
     } catch (err) {
       this.update({ busy: null })
       this.toast('error', err instanceof Error ? err.message : String(err))
@@ -2565,7 +2606,13 @@ export class AppStore {
   undoCommit(): void {
     const last = this.state.lastCommit
     if (last !== null) {
-      this.confirmUncommit(last.sha, last.summary, last.description, last.paths)
+      this.confirmUncommit(
+        last.sha,
+        last.summary,
+        last.description,
+        last.paths,
+        last.unpushed
+      )
       return
     }
     // No just-created Aspen commit: Undo still works as a generic
@@ -2584,7 +2631,7 @@ export class AppStore {
       )
       return
     }
-    this.confirmUncommit(tip.sha, tip.summary, tip.body, null)
+    this.confirmUncommit(tip.sha, tip.summary, tip.body, null, tip.unpushed)
   }
 
   /**
@@ -2600,6 +2647,19 @@ export class AppStore {
       this.toast('error', 'Select a commit first.')
       return
     }
+    this.uncommit(commit)
+  }
+
+  /**
+   * The same uncommit, asked of a commit named by its row rather than by the
+   * selection — what the list's hover verb needs, so a click on row five acts
+   * on row five whatever is open in the detail pane.
+   */
+  uncommit(commit: CommitInfo): void {
+    if (this.state.selectedRepo === null) {
+      this.toast('error', 'Open a repository first.')
+      return
+    }
     if (commit.isMerge) {
       this.toast(
         'error',
@@ -2607,49 +2667,112 @@ export class AppStore {
       )
       return
     }
-    this.confirmUncommit(commit.sha, commit.summary, commit.body, null)
+    this.confirmUncommit(
+      commit.sha,
+      commit.summary,
+      commit.body,
+      null,
+      commit.unpushed
+    )
+  }
+
+  /**
+   * The Outbox desk's "Uncommit all": one guarded soft reset removes every
+   * unpushed commit at once and leaves their combined diff staged in
+   * Review. The commit box gets the newest commit's message with the other
+   * removed summaries listed under it, so nothing typed is lost to the
+   * squish. Refusals (a merge in the range, a moved HEAD, a range that is
+   * not a straight line) surface as the main-process error and change
+   * nothing — the per-row Uncommit stays the way through.
+   */
+  uncommitAllUnpushed(): void {
+    const repo = this.state.selectedRepo
+    if (repo === null) {
+      this.toast('error', 'Open a repository first.')
+      return
+    }
+    const outgoing = this.state.commits.filter(c => c.unpushed)
+    if (outgoing.length === 0) {
+      this.toast('info', 'Nothing is waiting to be undone.')
+      return
+    }
+    const [newest] = outgoing
+    const rest = outgoing.slice(1)
+    const description =
+      rest.length === 0
+        ? newest.body
+        : [
+            newest.body,
+            'Previously unpushed commits folded into this one:',
+            ...rest.map(c => `- ${c.summary}`)
+          ]
+          .filter(p => p.length > 0)
+          .join('\n\n')
+    this.update({
+      confirm: {
+        title: `Uncommit all ${outgoing.length === 1 ? 'unpushed commit' : `${outgoing.length} unpushed commits`}?`,
+        message:
+          `All ${outgoing.length === 1 ? 'commit' : `${outgoing.length} commits`} waiting to be pushed will be removed from history. ` +
+          'Their changes come back to Review as staged files, and the newest message goes back to the commit box' +
+          (rest.length > 0
+            ? ` with the other ${rest.length} listed under it`
+            : '') +
+          '.',
+        confirmLabel: 'Uncommit all',
+        onConfirm: () => {
+          this.update({ confirm: null })
+          void (async () => {
+            const ok = await this.runGit(async () => {
+              await call('uncommitAllUnpushed', repo.path, newest.sha)
+            }, 'undo')
+            if (!ok) return
+            this.setDraft(repo.path, {
+              summary: newest.summary,
+              description,
+              checked: new Set()
+            })
+            this.update({ lastCommit: null, amend: null, view: 'review' })
+            void this.loadLog(false)
+            void this.refresh()
+          })()
+        }
+      }
+    })
   }
 
   /**
    * Shared confirm → guarded uncommit → refill-the-commit-box flow behind
    * Undo and Uncommit. `paths` rides along when Aspen just produced the
    * commit (the toast's Undo); otherwise the scope is read from the commit
-   * itself when the dialog is confirmed.
+   * itself when the dialog is confirmed. `unpushed` is the commit's own
+   * answer, which is what decides the force-push warning.
    */
   private confirmUncommit(
     sha: string,
     summary: string,
     description: string,
-    paths: ReadonlyArray<string> | null
+    paths: ReadonlyArray<string> | null,
+    unpushed: boolean
   ): void {
     const repo = this.state.selectedRepo
     if (repo === null) {
       this.toast('error', 'Open a repository first.')
       return
     }
-    const status = this.state.status
     const isTip = this.state.commits[0]?.sha === sha
-    // A commit that is already in the upstream needs a force-push to leave
-    // history. The tip is pushed whenever the branch is not ahead; an older
-    // commit is pushed unless it sits inside the unpushed window at the tip.
-    // That position is only meaningful on an unfiltered list, so a filtered
-    // view (or a commit missing from it) warns whenever an upstream exists.
-    const index = this.state.commits.findIndex(c => c.sha === sha)
-    const filtered =
-      this.state.logSearch.trim().length > 0 ||
-      this.state.logAuthor.trim().length > 0
-    const ahead = status?.ahead ?? 0
-    const pushed =
-      status?.upstream !== undefined &&
-      (isTip ? ahead === 0 : filtered || index === -1 ? true : index >= ahead)
+    // Whether this costs a force-push is git's fact about the commit, not
+    // something to reconstruct from a row's position: the flag arrives with
+    // every log entry, so it stays right on a filtered list, on the Unpushed
+    // list, and for a commit that is not on this page at all.
+    const pushed = !unpushed
     this.update({
       confirm: {
         title: 'Uncommit this commit?',
         message:
           `"${summary.slice(0, 70)}" will be removed from history. ` +
           (isTip
-            ? 'Its changes stay staged and its message goes back to the commit box'
-            : 'Later commits will be rewritten onto its parent, and its changes and message go back to the commit box') +
+            ? 'Its changes come back to Review as staged files and its message goes back to the commit box'
+            : 'Later commits will be rewritten onto its parent, and its changes come back to Review as staged files with its message in the commit box') +
           (pushed
             ? ' — it was already pushed, so your next push will need a force-push.'
             : '.'),
@@ -2822,7 +2945,7 @@ export class AppStore {
       await this.refresh()
       void this.refreshBranches()
       void this.refreshStashes()
-      if (this.state.view === 'history') void this.loadLog(false)
+      if (this.state.view === 'history' || this.state.view === 'outbox') void this.loadLog(false)
       return true
     } catch (err) {
       // A failed pull retires the compound-verb flag: the conflicts dialog
@@ -3021,7 +3144,7 @@ export class AppStore {
       if (this.state.selectedRepo?.path !== path) return
       await this.refresh()
       void this.refreshBranches()
-      if (this.state.view === 'history') void this.loadLog(false)
+      if (this.state.view === 'history' || this.state.view === 'outbox') void this.loadLog(false)
     } catch {
       // Offline, an expired token, a dead remote: the next tick tries again,
       // and a manual Fetch says out loud what this one swallowed.
@@ -3129,7 +3252,7 @@ export class AppStore {
     }
     void this.refreshBranches()
     void this.refreshStashes()
-    if (this.state.view === 'history') void this.loadLog(false)
+    if (this.state.view === 'history' || this.state.view === 'outbox') void this.loadLog(false)
   }
 
   async createBranch(name: string, startPoint?: string): Promise<void> {

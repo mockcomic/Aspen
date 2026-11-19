@@ -1,6 +1,7 @@
 import { execGit, friendlyGitError, GitExecError } from './exec'
 import { getStatus } from './status'
 import { addPaths } from './staging'
+import { unpushedRange } from './log'
 
 /**
  * Commits the staged baseline — everything already in the index — plus the
@@ -343,6 +344,88 @@ async function revParseHead(repoPath: string): Promise<string> {
   }
 }
 
+
+/**
+ * The Outbox desk's "Uncommit all": one guarded soft reset that removes
+ * every unpushed commit at once, leaving their combined diff staged. The
+ * range is the same one the list was built from (`log.unpushedRange`), so
+ * the desk's rows and this operation can never disagree.
+ *
+ * One step rewrites more than one commit, so the guards are stricter than
+ * the single uncommit's: HEAD must still be the newest listed commit, the
+ * outgoing set must contain no merge (a soft reset would silently flatten
+ * it), and the set must be a straight line from the boundary parent to
+ * HEAD — anything else refuses without touching history and leaves the
+ * per-commit Uncommit as the way through. An empty range is success, not
+ * an error: there was simply nothing to undo.
+ */
+export async function uncommitAllUnpushed(
+  repoPath: string,
+  expectedSha: string
+): Promise<string[]> {
+  const head = await revParseHead(repoPath)
+  if (head.length === 0) {
+    throw new Error('This repository has no commits to undo.')
+  }
+  if (expectedSha.length > 0 && !sameSha(head, expectedSha)) {
+    throw new Error(
+      'History has moved since this list was loaded, so nothing was undone.'
+    )
+  }
+
+  const range = await unpushedRange(repoPath)
+  const walk = await execGit(['rev-list', ...range], {
+    cwd: repoPath,
+    timeoutMs: 15_000
+  })
+  const shas = walk.stdout
+    .trim()
+    .split(/\s+/)
+    .filter(s => s.length > 0)
+  if (shas.length === 0) return []
+
+  const merges = await execGit(['rev-list', '--merges', ...range], {
+    cwd: repoPath,
+    timeoutMs: 15_000
+  })
+  if (merges.stdout.trim().length > 0) {
+    throw new Error(
+      'The unpushed range contains a merge commit, so the bulk uncommit refuses. Uncommit the rows individually instead.'
+    )
+  }
+
+  const oldest = shas[shas.length - 1]
+  const parent = await execGit(
+    ['rev-parse', '--verify', '--quiet', `${oldest}^`],
+    { cwd: repoPath, timeoutMs: 10_000 }
+  ).catch(() => null)
+  const parentSha = parent?.stdout.trim() ?? ''
+  if (parentSha.length === 0) {
+    throw new Error(
+      'The first commit in the repository is unpushed, and it has no parent to reset back to. Undo the rows individually instead.'
+    )
+  }
+
+  // Linear-set guard: the walk from the boundary parent to HEAD must be
+  // exactly the outgoing set. A second, already-pushed parent hanging off
+  // the range (the multi-root `HEAD --not --remotes` shape) would smuggle
+  // pushed work into the staged diff, so it refuses here too.
+  const span = await execGit(
+    ['rev-list', '--count', `${parentSha}..HEAD`],
+    { cwd: repoPath, timeoutMs: 10_000 }
+  )
+  if (Number.parseInt(span.stdout.trim(), 10) !== shas.length) {
+    throw new Error(
+      'The unpushed commits do not form a straight line, so the bulk uncommit refuses. Uncommit the rows individually instead.'
+    )
+  }
+
+  await execGit(['reset', '--quiet', '--soft', parentSha], {
+    cwd: repoPath,
+    timeoutMs: 30_000
+  })
+  return shas
+}
 
 /** Compares two SHAs tolerating an abbreviated expected value. */
 function sameSha(head: string, expected: string): boolean {

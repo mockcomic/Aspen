@@ -12,9 +12,9 @@ import {
 } from './ContextMenu'
 import { ConfettiBurst, useCelebration } from './Celebration'
 import { useJustArmed } from '../motion'
-import { showStagedBadges } from '../progressive'
+import { showStagedBadges, unpushedStory } from '../progressive'
 import { DivergenceChips, UpstreamGoneChip } from './BranchBadges'
-import { commits, divergenceSentence } from '../divergence'
+import { commits, divergenceSentence, unpushedMarkTitle } from '../divergence'
 
 function matches(path: string, filter: string): boolean {
   const needle = filter.trim().toLowerCase()
@@ -387,7 +387,9 @@ export function HistoryQueue(): JSX.Element {
   const state = useStoreState()
   const store = useStore()
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
-
+  // The marks came from git in the same reply that drew these rows, so an
+  // unpublished branch still gets an honest number where there is no `ahead`
+  // count to quote. See progressive.unpushedStory.
   return (
     <div className="changes-list">
       <div className="changes-toolbar history-filters">
@@ -481,7 +483,32 @@ export function HistoryQueue(): JSX.Element {
           <span className="commit-summary">
             {c.summary}
             {c.isMerge && <span className="badge">merge</span>}
+            {c.unpushed && (
+              <span
+                className="badge div mark"
+                role="img"
+                aria-label={unpushedMarkTitle(state.status)}
+                title={unpushedMarkTitle(state.status)}
+              >
+                ↑
+              </span>
+            )}
           </span>
+          {!c.isMerge && c.unpushed && (
+            <span
+              className="conflict-actions commit-row-actions"
+              onClick={e => e.stopPropagation()}
+            >
+              <button
+                className="mini"
+                title="Undo this commit and bring its changes back to Review"
+                disabled={state.busy !== null}
+                onClick={() => store.uncommit(c)}
+              >
+                Uncommit
+              </button>
+            </span>
+          )}
           <span className="commit-meta">
             {relativeTime(c.date)}
             <br />
@@ -499,6 +526,155 @@ export function HistoryQueue(): JSX.Element {
           {state.commitsLoading ? 'Loading…' : 'Load more commits'}
         </button>
       )}
+      {menu !== null && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------ outbox
+
+/**
+ * The Outbox desk's queue: the commits this branch owes the remote, newest
+ * first, each with its Uncommit. The rows come from the same `getLog` walk
+ * the History desk uses, restricted to the outgoing range — one definition
+ * of "unpushed", shared with the ↑ chip, the tab badge, and the menu.
+ */
+export function OutboxQueue(): JSX.Element {
+  const state = useStoreState()
+  const store = useStore()
+  const [menu, setMenu] = useState<ContextMenuState | null>(null)
+  // The marks came from git in the same reply that drew these rows, so an
+  // unpublished branch still gets an honest number where there is no
+  // `ahead` count to quote. See progressive.unpushedStory.
+  const story = unpushedStory(
+    state.status,
+    state.commits.filter(c => c.unpushed).length
+  )
+  const hasMerge = state.commits.some(c => c.isMerge)
+
+  return (
+    <div className="changes-list">
+      <div className="changes-toolbar history-filters">
+        <input
+          className="filter-input"
+          placeholder="Author"
+          aria-label="Filter commits by author"
+          value={state.logAuthor}
+          onChange={e => store.setLogAuthor(e.target.value)}
+        />
+      </div>
+
+      {state.commits.length > 0 && (
+        <div className="queue-label" title={story.title}>
+          Unpushed <b>{state.commits.length}</b>
+          <button
+            className="mini outbox-uncommit-all"
+            title={
+              hasMerge
+                ? 'Undo every unpushed commit at once and bring all their changes back to Review — a merge in the range must be uncommitted individually'
+                : 'Undo every unpushed commit at once and bring all their changes back to Review'
+            }
+            disabled={state.busy !== null}
+            onClick={() => store.uncommitAllUnpushed()}
+          >
+            Uncommit all
+          </button>
+        </div>
+      )}
+
+      {state.commitsLoading && state.commits.length === 0 && (
+        <div className="sidebar-message">Loading…</div>
+      )}
+      {state.logError !== null && (
+        <div className="sidebar-message error">
+          <strong>History can't be read.</strong>
+          <p>{state.logError}</p>
+          <p>
+            <button className="mini" onClick={() => void store.refreshLog()}>
+              Try again
+            </button>
+          </p>
+        </div>
+      )}
+      {!state.commitsLoading &&
+        state.logError === null &&
+        state.commits.length === 0 && (
+          <div className="sidebar-message">
+            <strong>{story.emptyTitle}</strong>
+            <p>{story.emptyHint}</p>
+          </div>
+        )}
+
+      {state.commits.map(c => (
+        <div
+          key={c.sha}
+          className={`commit-row${state.selectedCommit?.sha === c.sha ? ' selected' : ''}`}
+          onClick={() => void store.selectCommit(c)}
+          onContextMenu={e => {
+            e.preventDefault()
+            void store.selectCommit(c)
+            setMenu(
+              menuStateFromEvent(e, [
+                {
+                  label: 'Copy full SHA',
+                  onSelect: () => void store.copyText(c.sha, 'Commit SHA')
+                },
+                ...(!c.isMerge
+                  ? [
+                      {
+                        label: 'Uncommit commit…',
+                        onSelect: () => store.uncommitSelectedCommit()
+                      }
+                    ]
+                  : []),
+                {
+                  label: 'Uncommit all…',
+                  onSelect: () => store.uncommitAllUnpushed()
+                }
+              ])
+            )
+          }}
+        >
+          <span className="avatar" title={c.authorName}>
+            {initials(c.authorName)}
+          </span>
+          <span className="commit-summary">
+            {c.summary}
+            {c.isMerge && <span className="badge">merge</span>}
+            {c.unpushed && (
+              <span
+                className="badge div mark"
+                role="img"
+                aria-label={unpushedMarkTitle(state.status)}
+                title={unpushedMarkTitle(state.status)}
+              >
+                ↑
+              </span>
+            )}
+          </span>
+          {!c.isMerge && c.unpushed && (
+            <span
+              className="conflict-actions commit-row-actions"
+              onClick={e => e.stopPropagation()}
+            >
+              <button
+                className="mini"
+                title="Undo this commit and bring its changes back to Review"
+                disabled={state.busy !== null}
+                onClick={() => store.uncommit(c)}
+              >
+                Uncommit
+              </button>
+            </span>
+          )}
+          <span className="commit-meta">
+            {relativeTime(c.date)}
+            <br />
+            <small>{c.sha.slice(0, 7)}</small>
+          </span>
+        </div>
+      ))}
+
       {menu !== null && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
     </div>
   )
@@ -1070,9 +1246,28 @@ function IdentityForm(): JSX.Element {
   const [name, setName] = useState(state.identity?.name ?? '')
   const [email, setEmail] = useState(state.identity?.email ?? '')
   const [saving, setSaving] = useState(false)
+  // The identity bridge: a signed-in provider already knows this person's
+  // name and a commit-worthy email (GitHub's primary verified address, or
+  // the noreply alias — see pickGitHubEmail). Signing in is auth, not
+  // authorship, so the banner persists until git config says otherwise;
+  // this turns the fix into one click instead of a lookup. Prefer the
+  // account that actually carries an email; a login-only account can only
+  // half-prefill.
+  const bridged =
+    state.accounts.find(a => typeof a.email === 'string' && a.email.length > 0) ??
+    state.accounts[0] ??
+    null
+  const providerLabel =
+    bridged?.provider === 'gitlab' ? 'GitLab' : 'GitHub'
 
   return (
     <div className="identity-form">
+      {bridged !== null && (
+        <p className="identity-note">
+          Signed in as {bridged.login} — that&apos;s your push access, not
+          your commit signature. Git needs a name and email of its own.
+        </p>
+      )}
       <input
         placeholder="Author name"
         aria-label="Author name"
@@ -1095,6 +1290,18 @@ function IdentityForm(): JSX.Element {
       >
         {saving ? 'Saving…' : 'Save'}
       </button>
+      {bridged !== null && (
+        <button
+          className="mini"
+          title={`Fill in ${bridged.displayName} <${bridged.email ?? 'no email on file'}> — edit before saving if you prefer a different address`}
+          onClick={() => {
+            setName(bridged.displayName)
+            setEmail(bridged.email ?? '')
+          }}
+        >
+          Use my {providerLabel} identity
+        </button>
+      )}
     </div>
   )
 }

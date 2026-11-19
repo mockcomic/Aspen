@@ -13,6 +13,13 @@ export interface ProviderIdentity {
   readonly login: string
   readonly displayName: string
   readonly avatarUrl: string | null
+  /**
+   * The account's commit-worthy email where the provider exposes one (GitHub:
+   * primary verified, else the noreply alias; GitLab: the profile email).
+   * Null keeps the sign-in flow working when the emails endpoint is
+   * unreachable — the identity bridge is a convenience, never a gate.
+   */
+  readonly email: string | null
 }
 
 /**

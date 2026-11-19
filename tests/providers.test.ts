@@ -83,14 +83,61 @@ describe('mapGitHubIdentity', () => {
     ).toEqual({
       login: 'octo',
       displayName: 'Octo Cat',
-      avatarUrl: 'https://avatars.githubusercontent.com/u/1'
+      avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+      email: null
     })
     expect(mapGitHubIdentity({ login: 'octo' })).toEqual({
       login: 'octo',
       displayName: 'octo',
-      avatarUrl: null
+      avatarUrl: null,
+      email: null
     })
     expect(mapGitHubIdentity({ id: 7 })).toBeNull()
+  })
+
+  it('prefers the primary verified email from /user/emails', () => {
+    const id = mapGitHubIdentity(
+      { login: 'octo', id: 583231, email: 'public@shown.example' },
+      [
+        { email: 'secondary@verified.example', verified: true, primary: false },
+        { email: 'octo@verified.example', verified: true, primary: true },
+        { email: 'unverified@example.com', verified: false, primary: false }
+      ]
+    )
+    expect(id?.email).toBe('octo@verified.example')
+  })
+
+  it('falls back to a verified non-primary, then the public email', () => {
+    expect(
+      mapGitHubIdentity(
+        { login: 'octo', id: 1 },
+        [{ email: 'only@verified.example', verified: true }]
+      )?.email
+    ).toBe('only@verified.example')
+    expect(
+      mapGitHubIdentity(
+        { login: 'octo', id: 1, email: 'pub@example.com' },
+        [{ email: 'nope@example.com', verified: false }]
+      )?.email
+    ).toBe('pub@example.com')
+  })
+
+  it('builds the noreply alias when nothing else works', () => {
+    expect(
+      mapGitHubIdentity({ login: 'octo', id: 583231 }, [])?.email
+    ).toBe('583231+octo@users.noreply.github.com')
+    expect(
+      mapGitHubIdentity({ login: 'octo', id: 583231 }, null)?.email
+    ).toBe('583231+octo@users.noreply.github.com')
+  })
+
+  it('reports no email for an account without an id or usable address', () => {
+    expect(mapGitHubIdentity({ login: 'octo' }, null)?.email).toBeNull()
+    // A bad public email with no usable id still yields nothing — the
+    // noreply alias needs the numeric id GitHub mints at signup.
+    expect(
+      mapGitHubIdentity({ login: 'octo', email: 'not-an-email' }, null)?.email
+    ).toBeNull()
   })
 })
 
@@ -182,12 +229,25 @@ describe('normalizeGitLabApiBase', () => {
 
 describe('mapGitLabIdentity', () => {
   it('reads username/name with the login fallback', () => {
-    expect(mapGitLabIdentity({ username: 'gituser', name: 'Git User' })).toEqual({
+    expect(
+      mapGitLabIdentity({ username: 'gituser', name: 'Git User' })
+    ).toEqual({
       login: 'gituser',
       displayName: 'Git User',
-      avatarUrl: null
+      avatarUrl: null,
+      email: null
     })
     expect(mapGitLabIdentity({ name: 'no username' })).toBeNull()
+  })
+
+  it('carries the profile email for the identity bridge', () => {
+    expect(
+      mapGitLabIdentity({
+        username: 'gituser',
+        name: 'Git User',
+        email: 'gituser@example.com'
+      })?.email
+    ).toBe('gituser@example.com')
   })
 })
 
