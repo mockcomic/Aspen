@@ -225,7 +225,12 @@ export function verifyManifest(
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return fail('manifest is not an object')
   const m = raw as Record<string, unknown>
   if (m.schema !== 1) return fail('manifest schema is not understood by this build')
-  if (m.repo !== UPDATE_REPO) return fail('manifest was signed for a different repository')
+  // The repo was renamed from BetterGitHub (2026-11); manifests signed for
+  // the old name are still authentic — accept both during the crossover.
+  const LEGACY_REPOS = ['mockcomic/BetterGitHub']
+  if (m.repo !== UPDATE_REPO && !LEGACY_REPOS.includes(String(m.repo))) {
+    return fail('manifest was signed for a different repository')
+  }
   if (typeof m.tag !== 'string' || m.tag !== expectTag) return fail('manifest was signed for a different release')
   if (!Number.isFinite(Date.parse(String(m.generatedAt ?? '')))) return fail('manifest carries no valid date')
   if (!Array.isArray(m.assets) || m.assets.length === 0 || m.assets.length > 16) {

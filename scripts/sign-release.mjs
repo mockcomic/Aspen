@@ -44,7 +44,7 @@ const assets = files.map((f) => {
     size: buf.length
   };
 });
-const manifest = { schema: 1, repo: 'mockcomic/BetterGitHub', tag, generatedAt: new Date().toISOString(), nonce: randomUUID(), assets };
+const manifest = { schema: 1, repo: 'mockcomic/Aspen', tag, generatedAt: new Date().toISOString(), nonce: randomUUID(), assets };
 const bytes = Buffer.from(JSON.stringify(manifest, null, 1) + '\n', 'utf8');
 const sig = sign(null, bytes, createPrivateKey(readFileSync(keyPath, 'utf8')));
 

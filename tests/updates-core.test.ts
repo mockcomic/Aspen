@@ -23,12 +23,12 @@ const { publicKey, privateKey } = generateKeyPairSync('ed25519', {
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
 })
 
-const DL = 'https://github.com/mockcomic/BetterGitHub/releases/download/v9.9.9'
+const DL = 'https://github.com/mockcomic/Aspen/releases/download/v9.9.9'
 
-function manifestBytes(assets: { name: string; sha256: string; size: number }[]): Buffer {
+function manifestBytes(assets: { name: string; sha256: string; size: number }[], repo = 'mockcomic/Aspen'): Buffer {
   const manifest = {
     schema: 1,
-    repo: 'mockcomic/BetterGitHub',
+    repo,
     tag: 'v9.9.9',
     generatedAt: new Date().toISOString(),
     nonce: 'test-nonce',
@@ -120,6 +120,19 @@ describe('verifyManifest', () => {
     const v = verifyManifest(bytes, 'not base64!!', 'v9.9.9', { keyPem: publicKey })
     expect(v.ok).toBe(false)
     if (!v.ok) expect(v.reason).toMatch(/malformed/)
+  })
+
+  it('accepts a legacy manifest signed under the pre-rename repo name', () => {
+    const bytes = manifestBytes([{ name: 'Aspen-Setup.exe', sha256: 'a'.repeat(64), size: 10 }], 'mockcomic/BetterGitHub')
+    const v = verifyManifest(bytes, signBytes(bytes), 'v9.9.9', { keyPem: publicKey })
+    expect(v.ok).toBe(true)
+  })
+
+  it('rejects a manifest signed for an unrelated repository', () => {
+    const bytes = manifestBytes([{ name: 'a.exe', sha256: 'a'.repeat(64), size: 1 }], 'someoneelse/Aspen')
+    const v = verifyManifest(bytes, signBytes(bytes), 'v9.9.9', { keyPem: publicKey })
+    expect(v.ok).toBe(false)
+    if (!v.ok) expect(v.reason).toMatch(/different repository/)
   })
 })
 

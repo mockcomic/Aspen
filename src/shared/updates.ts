@@ -16,7 +16,7 @@
 
 /** The owner/repo whose Releases feed the updater. */
 export const UPDATE_REPO_OWNER = 'mockcomic'
-export const UPDATE_REPO_NAME = 'BetterGitHub'
+export const UPDATE_REPO_NAME = 'Aspen'
 export const UPDATE_REPO = `${UPDATE_REPO_OWNER}/${UPDATE_REPO_NAME}`
 
 /** Where every "get the update" affordance sends the user. */

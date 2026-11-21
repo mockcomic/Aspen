@@ -1,4 +1,4 @@
-# BetterGitHub agent instructions
+# Aspen agent instructions
 
 ## codebase-memory project id
 

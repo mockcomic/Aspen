@@ -65,7 +65,7 @@ describe('isVersionNewer', () => {
 })
 
 describe('sanitizeRelease', () => {
-  const DL = 'https://github.com/mockcomic/BetterGitHub/releases/download/v0.2.0'
+  const DL = 'https://github.com/mockcomic/Aspen/releases/download/v0.2.0'
 
   it('maps a real-shaped GitHub release payload', () => {
     const rel = sanitizeRelease({
@@ -83,7 +83,7 @@ describe('sanitizeRelease', () => {
     expect(rel).not.toBeNull()
     expect(rel?.tag).toBe('v0.2.0')
     expect(rel?.versionLabel).toBe('0.2.0')
-    expect(rel?.url).toBe('https://github.com/mockcomic/BetterGitHub/releases/tag/v0.2.0')
+    expect(rel?.url).toBe('https://github.com/mockcomic/Aspen/releases/tag/v0.2.0')
     expect(rel?.manifestPair).toBe('pair')
     expect(rel?.assets[0].sha256).toBe('a'.repeat(64))
   })
@@ -116,7 +116,7 @@ describe('sanitizeRelease', () => {
       tag_name: 'v1.0.0',
       published_at: '2026-01-01T00:00:00Z',
       assets: [
-        { name: 'evil.exe', browser_download_url: 'http://github.com/mockcomic/BetterGitHub/releases/download/v1.0.0/evil.exe' },
+        { name: 'evil.exe', browser_download_url: 'http://github.com/mockcomic/Aspen/releases/download/v1.0.0/evil.exe' },
         { name: 'stranger.exe', browser_download_url: 'https://evil.test/setup.exe' },
         { name: 'ok.exe', browser_download_url: `${DL}/ok.exe` }
       ]
@@ -168,7 +168,7 @@ describe('decide', () => {
 })
 
 describe('chooseAsset', () => {
-  const DL = 'https://github.com/mockcomic/BetterGitHub/releases/download/v1.0.0'
+  const DL = 'https://github.com/mockcomic/Aspen/releases/download/v1.0.0'
   const rel = sanitizeRelease({
     tag_name: 'v1.0.0',
     published_at: '2026-01-01T00:00:00Z',

@@ -8,7 +8,7 @@ release-time ritual that makes a release authenticable.
 
 Every release should carry two extra assets next to the installers:
 
-- `update-manifest.json` — `{ schema: 1, repo: "mockcomic/BetterGitHub",
+- `update-manifest.json` — `{ schema: 1, repo: "mockcomic/Aspen",
   tag, generatedAt, nonce, assets: [{ name, sha256, size }] }`
 - `update-manifest.json.sig` — base64 ed25519 signature over the manifest's
   **exact bytes** (the file as written, no reformatting).
@@ -38,7 +38,7 @@ node scripts/sign-release.mjs vX.Y.Z release/Aspen-Setup.exe release/Aspen-porta
 # -> writes release/update-manifest.json + update-manifest.json.sig
 #    (self-verifies against the committed public key; hard-fails without
 #     the private key)
-python3 scripts/publish-release.py mockcomic/BetterGitHub vX.Y.Z "Aspen X.Y.Z" notes.md \
+python3 scripts/publish-release.py mockcomic/Aspen vX.Y.Z "Aspen X.Y.Z" notes.md \
     release/Aspen-Setup.exe release/Aspen-portable.exe \
     release/update-manifest.json release/update-manifest.json.sig
 ```
@@ -60,7 +60,7 @@ at release time; the script computes digests from the bytes on disk.
 
 Additional gates on the download itself:
 
-- Asset URLs are pinned to `github.com/mockcomic/BetterGitHub/releases/…`
+- Asset URLs are pinned to `github.com/mockcomic/Aspen/releases/…`
   or `objects.githubusercontent.com`, https only, and a followed redirect
   must land back on those hosts — a 302 to a stranger or a plain-http drop
   aborts before the checksum.
