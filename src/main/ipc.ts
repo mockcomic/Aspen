@@ -87,6 +87,7 @@ import {
   getConfigInfo,
   getRemoteUrl,
   pull,
+  precheckPublish,
   publishRepository as publishToRemote,
   push,
   setConfigInfo,
@@ -643,6 +644,10 @@ const handlers: Handlers = {
   ): Promise<RemoteRepository> {
     const account = await requireAccount(accountId)
     validateCreateRepoRequest(request)
+    // Run the local checks BEFORE creating the hosted repository: an origin,
+    // an unborn HEAD, or a detached branch must fail with no orphan sitting
+    // on the provider (git/sync.ts reruns these after the API call anyway).
+    await precheckPublish(repoPath)
     const client = account.provider === 'github' ? githubClient : gitlabClient
     const created = await withAccountToken(account, token =>
       client.createRepo(account.apiBase, account, token, account.authKind, {
